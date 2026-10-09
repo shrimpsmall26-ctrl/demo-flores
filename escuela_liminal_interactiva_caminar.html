@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Escuela Liminal Morada 🌷</title>
+<script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif}
+#ayuda{position:fixed;z-index:5;left:12px;bottom:12px;max-width:390px;padding:11px 14px;border-radius:12px;color:#332d43;background:rgba(255,250,242,.9);font-size:13px;line-height:1.45;pointer-events:none;box-shadow:0 3px 16px #0002}
+</style>
+<script>
+AFRAME.registerComponent('caminar-suelo',{
+  schema:{speed:{default:3.2}},
+  init:function(){
+    this.keys={};
+    this.onDown=e=>{this.keys[e.key.toLowerCase()]=true;};
+    this.onUp=e=>{this.keys[e.key.toLowerCase()]=false;};
+    window.addEventListener('keydown',this.onDown);
+    window.addEventListener('keyup',this.onUp);
+    this.cameraEl=this.el.querySelector('[camera]');
+    this.direction=new THREE.Vector3();
+    this.forward=new THREE.Vector3();
+    this.right=new THREE.Vector3();
+  },
+  tick:function(t,dt){
+    if(!dt)return;
+    const k=this.keys, f=(k.w||k.arrowup?1:0)-(k.s||k.arrowdown?1:0),
+          r=(k.d||k.arrowright?1:0)-(k.a||k.arrowleft?1:0);
+    if(!f&&!r)return;
+    const cam=this.cameraEl.object3D;
+    cam.getWorldDirection(this.forward);
+    this.forward.y=0; this.forward.normalize();
+    this.right.set(-this.forward.z,0,this.forward.x);
+    this.direction.set(0,0,0).addScaledVector(this.forward,f).addScaledVector(this.right,r);
+    if(this.direction.lengthSq()>0)this.direction.normalize();
+    const step=this.data.speed*(dt/1000);
+    this.el.object3D.position.x+=this.direction.x*step;
+    this.el.object3D.position.z+=this.direction.z*step;
+    this.el.object3D.position.y=0;
+    this.el.object3D.position.x=THREE.MathUtils.clamp(this.el.object3D.position.x,-5.25,5.25);
+    this.el.object3D.position.z=THREE.MathUtils.clamp(this.el.object3D.position.z,-68,1.5);
+  },
+  remove:function(){
+    window.removeEventListener('keydown',this.onDown);
+    window.removeEventListener('keyup',this.onUp);
+  }
+});
+</script>
+</head>
+<body>
+<div id="ayuda">🌷 Escuela liminal morada · WASD o flechas para caminar. Ratón para mirar. Haz clic en puertas y ventanas para abrirlas.</div>
+
+<a-scene background="color:#e7e0ed"
+ renderer="colorManagement:true; physicallyCorrectLights:true"
+ fog="type:exponential; color:#e7e0ed; density:0.003"
+ cursor="rayOrigin:mouse; fuse:false"
+ raycaster="objects:.interactivo; far:30">
+<a-sky color="#e7e0ed"></a-sky>
+<a-entity light="type:ambient; color:#fff2ff; intensity:0.85"></a-entity>
+<a-entity light="type:directional; color:#ffe8ce; intensity:1.0" position="-4 10 -18" castShadow="true"></a-entity>
+
+<a-entity id="pasillo"></a-entity>
+<a-entity id="arquitectura"></a-entity>
+<a-entity id="salones"></a-entity>
+<a-entity id="jardin"></a-entity>
+
+<script>
+const pasillo=document.querySelector('#pasillo'), arq=document.querySelector('#arquitectura');
+const salones=document.querySelector('#salones'), jardin=document.querySelector('#jardin');
+const largo=74, finalZ=-70, ancho=12, puertaZ=[-10,-25,-40,-55];
+
+function box(parent,pos,size,color,extra={}){
+  const e=document.createElement('a-box');
+  e.setAttribute('position',pos); e.setAttribute('width',size[0]);
+  e.setAttribute('height',size[1]); e.setAttribute('depth',size[2]);
+  e.setAttribute('color',color); e.setAttribute('material','roughness:0.82');
+  Object.entries(extra).forEach(([k,v])=>e.setAttribute(k,v));
+  parent.appendChild(e); return e;
+}
+function sphere(parent,pos,scale,color){
+  const e=document.createElement('a-sphere');
+  e.setAttribute('position',pos); e.setAttribute('scale',scale); e.setAttribute('color',color);
+  parent.appendChild(e); return e;
+}
+function pointLight(parent,pos,color,intensity,distance){
+  const e=document.createElement('a-entity'); e.setAttribute('position',pos);
+  e.setAttribute('light',`type:point; color:${color}; intensity:${intensity}; distance:${distance}; decay:1.5`);
+  parent.appendChild(e); return e;
+}
+function interactivo(e){e.classList.add('interactivo'); e.setAttribute('data-raycastable',''); return e;}
+function animarBisagra(pivot,attr,openValue){
+  pivot.setAttribute('data-open','false');
+  pivot.addEventListener('click',()=>{
+    const open=pivot.getAttribute('data-open')==='true';
+    pivot.setAttribute('data-open',String(!open));
+    pivot.removeAttribute('animation__move');
+    pivot.setAttribute('animation__move',{
+      property:'rotation', to:`0 ${open?0:openValue} 0`,
+      dur:700, easing:'easeInOutSine'
+    });
+  });
+}
+
+/* Suelo y techo */
+box(pasillo,`0 -0.22 ${finalZ/2+1}`,[ancho,0.4,largo+4],'#506c45');
+box(pasillo,`0 -0.44 ${finalZ/2+1}`,[ancho+0.2,0.12,largo+4],'#a8a092');
+box(pasillo,`0 4.65 ${finalZ/2+1}`,[ancho,0.3,largo+4],'#f7f3f1');
+const grassBase=document.createElement('a-plane');
+grassBase.setAttribute('position',`0 -0.012 ${finalZ/2+1}`);
+grassBase.setAttribute('rotation','-90 0 0'); grassBase.setAttribute('width','11.95');
+grassBase.setAttribute('height','77'); grassBase.setAttribute('material','color:#587449; roughness:1; side:double');
+pasillo.appendChild(grassBase);
+
+/* Pared izquierda con huecos de puertas */
+function wallWithDoorways(x){
+  const start=2,end=-72, intervals=puertaZ.map(z=>[z+1.25,z-1.25]).sort((a,b)=>b[0]-a[0]);
+  let cursor=start;
+  for(const [hi,lo] of intervals){
+    if(cursor>hi)box(arq,`${x} 2.15 ${(cursor+hi)/2}`,[0.28,4.3,cursor-hi],'#e8e5e1');
+    box(arq,`${x} 3.75 ${zMid(hi,lo)}`,[0.28,1.1,hi-lo],'#e8e5e1');
+    cursor=lo;
+  }
+  if(cursor>end)box(arq,`${x} 2.15 ${(cursor+end)/2}`,[0.28,4.3,cursor-end],'#e8e5e1');
+}
+function zMid(a,b){return (a+b)/2;}
+wallWithDoorways(-6);
+
+/* Pared derecha segmentada para ventanas */
+const winZ=[]; for(let z=-5;z>=-65;z-=10)winZ.push(z);
+let cursor=2;
+for(const z of winZ.slice().sort((a,b)=>b-a)){
+  const top=z+2.1,bottom=z-2.1;
+  if(cursor>top)box(arq,`6 2.15 ${(cursor+top)/2}`,[0.28,4.3,cursor-top],'#e8e5e1');
+  box(arq,`6 0.55 ${z}`,[0.28,1.1,4.2],'#e8e5e1');
+  box(arq,`6 3.75 ${z}`,[0.28,1.1,4.2],'#e8e5e1');
+  cursor=bottom;
+}
+if(cursor>-72)box(arq,`6 2.15 ${(cursor-72)/2}`,[0.28,4.3,cursor+72],'#e8e5e1');
+
+/* Ventanas abatibles, marcos y cortinas */
+winZ.forEach((z,i)=>{
+  const frame='#f8f5ef';
+  box(arq,`5.82 2.15 ${z-2.05}`,[0.22,3.25,0.14],frame);
+  box(arq,`5.82 2.15 ${z+2.05}`,[0.22,3.25,0.14],frame);
+  box(arq,`5.82 3.72 ${z}`,[0.22,0.14,4.1],frame);
+  box(arq,`5.82 0.58 ${z}`,[0.22,0.14,4.1],frame);
+
+  const pivot=document.createElement('a-entity');
+  pivot.setAttribute('position',`5.76 2.15 ${z-1.94}`);
+  const pane=box(pivot,'0 0 1.94',[0.07,3.0,3.78],i%2?'#b5dff5':'#c6e8ff',{
+    material:'transparent:true; opacity:0.35; roughness:0.15; side:double'
+  });
+  interactivo(pane); interactivo(pivot);
+  animarBisagra(pivot,'rotation',-62);
+  arq.appendChild(pivot);
+
+  pointLight(arq,`4.9 2.7 ${z}`,'#c9eaff',1.15,13);
+  const patch=document.createElement('a-plane');
+  patch.setAttribute('position',`2.5 0.006 ${z-0.4}`);
+  patch.setAttribute('rotation','-90 0 0'); patch.setAttribute('width','4.8'); patch.setAttribute('height','5.7');
+  patch.setAttribute('material','shader:flat; color:#d5edff; transparent:true; opacity:0.16; side:double');
+  arq.appendChild(patch);
+
+  // Cortinas a ambos lados de cada ventana
+  for(const side of [-1,1]){
+    box(arq,`5.48 2.3 ${z+side*1.48}`,[0.13,2.75,0.95],i%2?'#f6f0ff':'#fff4e8');
+    for(let k=0;k<4;k++)box(arq,`5.39 2.3 ${z+side*(1.15+k*0.19)}`,
+      [0.025,2.58,0.035],'#ded3e5');
+  }
+  box(arq,`5.48 3.72 ${z}`,[0.14,0.08,4.25],'#e8dfeb');
+});
+
+/* Luces de techo y brillo lejano */
+for(let z=-4;z>=-68;z-=5){
+  box(arq,`0 4.38 ${z}`,[11.7,0.18,0.3],'#d7d0ca');
+  box(arq,`0 4.22 ${z}`,[2.0,0.1,0.6],'#fff3d7',{
+    material:'color:#fff3d7; emissive:#fff0bf; emissiveIntensity:0.65'
+  });
+  pointLight(arq,`0 3.95 ${z}`,'#ffe8c7',0.65,14);
+}
+const halo=sphere(arq,`0 2.5 ${finalZ+0.8}`,'1.4 1.8 0.22','#fff4df');
+halo.setAttribute('material','shader:flat; color:#fff4df; emissive:#fff0c7; emissiveIntensity:1.5');
+pointLight(arq,`0 2.8 ${finalZ+2}`,'#fff0cf',2,28);
+box(arq,`0 2.15 ${finalZ-1.4}`,[12,4.3,0.25],'#faf7f3');
+
+/* Salones, pizarrones, pupitres y ventanas */
+function crearSalon(z,n){
+  const g=document.createElement('a-entity'); g.setAttribute('position',`-6.18 0 ${z}`); salones.appendChild(g);
+  box(g,'-5.25 -0.12 0',[10.5,0.24,11.5],'#c9b69e');
+  box(g,'-5.25 4.05 0',[10.5,0.22,11.5],'#f3eee7');
+  box(g,'-10.5 2 -4.95',[0.22,4,1.45],'#e9e5df');
+  box(g,'-10.5 2 4.95',[0.22,4,1.45],'#e9e5df');
+  box(g,'-10.5 0.52 0',[0.22,1.04,8.5],'#e9e5df');
+  box(g,'-10.5 3.55 0',[0.22,0.9,8.5],'#e9e5df');
+  box(g,'-5.25 2 -5.65',[10.5,4,0.2],'#e9e5df');
+  box(g,'-5.25 2 5.65',[10.5,4,0.2],'#e9e5df');
+  box(g,'-5.25 2.35 -5.5',[4.6,1.65,0.12],'#245548');
+  box(g,'-5.25 1.48 -5.4',[4.8,0.09,0.22],'#a88b68');
+  box(g,'-5.25 3.2 -5.4',[4.8,0.08,0.22],'#a88b68');
+  box(g,'-5.9 2.6 -5.42',[1.6,0.025,0.025],'#f4f0d9');
+  box(g,'-4.9 2.25 -5.42',[2.1,0.025,0.025],'#f4f0d9');
+
+  box(g,'-10.37 2.35 -4.15',[0.25,2.6,0.14],'#f8f5ef');
+  box(g,'-10.37 2.35 4.15',[0.25,2.6,0.14],'#f8f5ef');
+  box(g,'-10.37 3.62 0',[0.25,0.14,8.3],'#f8f5ef');
+  box(g,'-10.37 1.08 0',[0.25,0.14,8.3],'#f8f5ef');
+  const wp=document.createElement('a-entity'); wp.setAttribute('position','-10.32 2.35 -4.05');
+  const glass=box(wp,'0 0 4.05',[0.07,2.35,8.0],'#bde5fa',{
+    material:'transparent:true; opacity:0.38; side:double'
+  });
+  interactivo(glass); interactivo(wp); animarBisagra(wp,'rotation',62); g.appendChild(wp);
+  pointLight(g,'-9.7 2.8 0','#c6eaff',1.6,15);
+  box(g,'-10.2 2.35 -3.4',[0.12,2.45,1.2],'#fff4e8');
+  box(g,'-10.2 2.35 3.4',[0.12,2.45,1.2],'#fff4e8');
+
+  for(let row=0;row<4;row++)for(let col=0;col<4;col++){
+    const x=-2.1-col*1.85, zz=-2.8+row*1.75;
+    box(g,`${x} 1 ${zz}`,[1.15,0.12,0.72],(row+col)%2?'#a77d57':'#b58c62');
+    box(g,`${x} 0.78 ${zz+0.29}`,[1,0.4,0.1],'#596d7d');
+    box(g,`${x} 0.52 ${zz-0.05}`,[0.95,0.1,0.65],'#667e8c');
+    for(const dx of [-0.38,0.38])for(const dz of [-0.25,0.25])
+      box(g,`${x+dx} 0.26 ${zz+dz}`,[0.06,0.48,0.06],'#62696c');
+  }
+  box(g,'-0.35 3.15 5.52',[1.8,0.65,0.12],'#e2d1ad');
+  const txt=document.createElement('a-text'); txt.setAttribute('value',`SALÓN ${n}`);
+  txt.setAttribute('align','center'); txt.setAttribute('color','#51483e'); txt.setAttribute('width','3.5');
+  txt.setAttribute('position','-0.35 3.05 5.43'); txt.setAttribute('rotation','0 180 0'); g.appendChild(txt);
+}
+
+/* Puertas interactivas: clic en cualquier parte de la hoja */
+puertaZ.forEach((z,i)=>{
+  crearSalon(z,i+1);
+  box(arq,`-5.82 2.05 ${z-1.29}`,[0.3,4.1,0.14],'#f8f4ed');
+  box(arq,`-5.82 2.05 ${z+1.29}`,[0.3,4.1,0.14],'#f8f4ed');
+  box(arq,`-5.82 4.05 ${z}`,[0.3,0.14,2.7],'#f8f4ed');
+  const pivot=document.createElement('a-entity');
+  pivot.setAttribute('position',`-5.78 0 ${z-1.18}`);
+  const leaf=box(pivot,'0 2 1.18',[0.18,3.85,2.25],i%2?'#54466d':'#66527f',{material:'roughness:0.68'});
+  interactivo(leaf); interactivo(pivot);
+  box(pivot,'0.105 2.55 1.18',[0.035,1.1,1.55],'#796796');
+  box(pivot,'0.105 1.25 1.18',[0.035,0.75,1.55],'#796796');
+  const handle=sphere(pivot,'0.19 1.85 1.9','0.09 0.09 0.09','#e4c47e');
+  interactivo(handle);
+  pivot.setAttribute('data-open','false');
+  pivot.addEventListener('click',()=>{
+    const open=pivot.getAttribute('data-open')==='true';
+    pivot.setAttribute('data-open',String(!open));
+    pivot.removeAttribute('animation__door');
+    pivot.setAttribute('animation__door',{
+      property:'rotation',to:`0 ${open?0:-95} 0`,dur:750,easing:'easeInOutSine'
+    });
+  });
+  arq.appendChild(pivot);
+});
+
+/* Flores moradas y pasto repartidos por TODO el suelo */
+const morados=['#6e3dbd','#8050d5','#9364e8','#a987f5','#5b2b9e','#b9a0ff','#7742bc'];
+function flor(x,z,size,shade){
+  const f=document.createElement('a-entity'); f.setAttribute('position',`${x} 0 ${z}`);
+  f.setAttribute('scale',`${size} ${size} ${size}`);
+  const stem=document.createElement('a-cylinder'); stem.setAttribute('position','0 0.48 0');
+  stem.setAttribute('radius','0.035'); stem.setAttribute('height','0.96');
+  stem.setAttribute('color','#3d7044'); f.appendChild(stem);
+  [[-0.15,0.36,0,-32],[0.14,0.52,0,28],[-0.13,0.65,0,-25]].forEach(d=>{
+    const l=sphere(f,`${d[0]} ${d[1]} ${d[2]}`,'0.2 0.055 0.09','#4d8a50');
+    l.setAttribute('rotation',`0 0 ${d[3]}`);
+  });
+  for(let i=0;i<8;i++){const a=i*Math.PI/4;
+    sphere(f,`${Math.cos(a)*0.2} ${0.99+Math.sin(a)*0.035} ${Math.sin(a)*0.2}`,'0.145 0.13 0.145',shade);}
+  sphere(f,'0 1.01 0','0.105 0.105 0.105','#f4d98c');
+  f.setAttribute('animation','property:rotation; from:0 0 -2; to:0 0 2; dir:alternate; dur:2600; loop:true; easing:easeInOutSine');
+  jardin.appendChild(f);
+}
+function hierba(x,z,s){
+  const g=document.createElement('a-entity'); g.setAttribute('position',`${x} 0 ${z}`); g.setAttribute('scale',`${s} ${s} ${s}`);
+  for(let i=0;i<6;i++){
+    const b=document.createElement('a-cone');
+    b.setAttribute('position',`${Math.sin(i*1.8)*0.12} ${0.16+(i%3)*0.035} ${Math.cos(i*1.8)*0.1}`);
+    b.setAttribute('radius-bottom','0.065'); b.setAttribute('radius-top','0.003');
+    b.setAttribute('height',0.32+(i%3)*0.08); b.setAttribute('color',['#386b3e','#4a8248','#609453'][i%3]); g.appendChild(b);
+  }
+  jardin.appendChild(g);
+}
+let seed=73421; function rnd(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;}
+for(let i=0;i<1100;i++)hierba(-5.65+rnd()*11.3,-1-rnd()*68,0.45+rnd()*0.8);
+for(let i=0;i<270;i++)flor(-5.35+rnd()*10.7,-1-rnd()*68,0.25+rnd()*0.58,morados[Math.floor(rnd()*morados.length)]);
+</script>
+
+<a-entity id="jugador" position="0 0 1.5" caminar-suelo="speed:3.2">
+  <a-camera position="0 1.65 0" look-controls="pointerLockEnabled:false"></a-camera>
+</a-entity>
+</a-scene>
+</body>
+</html>
